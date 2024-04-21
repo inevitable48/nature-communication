@@ -1,0 +1,211 @@
+# 清除环境中的变量以避免混淆
+rm(list = ls())
+library(Seurat)
+library(tidyverse)
+library(ggsci)
+library(clustree)
+library(metap)
+library(harmony)
+library(patchwork)
+library(MySeuratWrappers)
+setwd("H:\\newbehcet\\newscrna\\HC+BD")
+
+# 读入并创建多个Seurat对象，从不同的文件夹读取数据
+folders <- paste0('../', list.files('../'))
+folders <- folders[c(-9)]
+scList = lapply(folders, function(folder) { 
+  CreateSeuratObject(counts = Read10X(folder), 
+                     project = folder,
+                     min.cells = 3, 
+                     min.features = 200)
+})
+
+# 整合不同样本的数据
+dak <- SplitObject(scRNA, split.by = "orig.ident")
+# 合并不同健康控制样本的数据
+HC <- merge(scList[[5]], y = c(scList[[6]], scList[[7]], scList[[8]], scList[[13]], scList[[14]], scList[[15]], scList[[16]]),  
+             add.cell.ids = c("moHC1", "moHC2", "moHC3", "moHC4", "HC5", "HC6", "HC7", "HC8"), 
+             project = "HC")
+
+# 合并疾病前期样本的数据
+PRE <- merge(scList[[1]], y = c(scList[[2]], scList[[3]], scList[[4]], scList[[9]], scList[[10]], scList[[11]], scList[[12]], dak$preBD1, dak$preBD2, dak$preBD3), 
+             add.cell.ids = c("moBD1", "moBD2", "moBD3", "moBD4", "BD5", "BD6", "BD7", "BD8", "BOD9", "BOD10", "BOD11"), 
+             project = "PRE")
+
+# 合并疾病后期样本的数据
+POST <- merge(dak$postBD1, y = c(dak$postBD2, dak$postBD3), 
+              add.cell.ids = c("BOD9POST", "BOD10POST", "BOD11POST"), 
+              project = "POST")
+# 对数据进行质控，筛选合格细胞
+cat("Before filter:", nrow(HC@meta.data), "cells\n")
+HC <- subset(HC, subset = nFeature_RNA > 500 & nFeature_RNA < 4000 & nCount_RNA > 1000 & nCount_RNA < 25000 & percent.mt < 10)
+cat("After filter:", nrow(HC@meta.data), "cells\n")
+
+# 重复对PRE和POST数据集执行相同的质控步骤
+PRE <- subset(PRE, subset = nFeature_RNA > 500 & nFeature_RNA < 4000 & nCount_RNA > 1000 & nCount_RNA < 25000 & percent.mt < 10)
+POST <- subset(POST, subset = nFeature_RNA > 500 & nFeature_RNA < 4000 & nCount_RNA > 1000 & nCount_RNA < 25000 & percent.mt < 10)
+# 运行Harmony算法进行批次效应的校正
+scedata <- RunHarmony(sampleList, c("orig.ident"), plot_convergence = TRUE)
+scedata <- FindIntegrationAnchors(object.list = sampleList, dims = 1:20)
+scedata <- IntegrateData(anchorset = scedata, dims = 1:20)
+
+# 细胞周期打分和主成分分析
+scedata <- CellCycleScoring(scedata, s.features = cc.genes$s.genes, g2m.features = cc.genes$g2m.genes, set.ident = TRUE)
+scedata <- ScaleData(scedata, vars.to.regress = c("S.Score", "G2M.Score", 'nFeature_RNA', "percent.mt", "orig.ident"))
+scedata <- RunPCA(scedata, npcs = 50)
+scedata <- JackStraw(scedata, num.replicate = 100, dims = 50)
+scedata <- ScoreJackStraw(scedata, dims = 1:50)
+# 使用UMAP和t-SNE技术进行数据可视化
+p1 <- DimPlot(scedata, group.by = "celltype.main", pt.size = 0.01, label = TRUE, reduction = 'umap', cols = allcolor, repel = TRUE)
+p2 <- DimPlot(scedata, pt.size = 0.5, label = TRUE, reduction = 'tsne')
+print(p1)
+print(p2)
+saveRDS(scedata, "scedata4HC4BD3.rds")
+
+# 输出UMAP和t-SNE图表的文件
+ggsave("UMAP_plot.pdf", plot = p1, width = 10, height = 8)
+ggsave("tSNE_plot.pdf", plot = p2, width = 10, height = 8)
+
+#Figure 1E
+scRNA$Tcelltype<- Idents(scRNA)
+scedata<- scRNA
+
+table(scedata$orig.ident)
+prop.table(table(Idents(scedata)))
+table(Idents(scedata), scedata$group)#各组不同细胞群细胞数
+
+Cellratio <- prop.table(table(Idents(scedata), scedata$group), margin = 2)#计算各组样本不同细胞群比例
+Cellratio
+Cellratio <- as.data.frame(Cellratio)
+colourCount = length(unique(Cellratio$Var1))
+library(ggplot2)
+ggplot(Cellratio) + 
+  geom_bar(aes(x =Var2, y= Freq, fill = Var1),stat = "identity",width = 0.7,size = 0.5,colour = '#222222')+ 
+  theme_classic() +
+  labs(x='Sample',y = 'Ratio')+
+  scale_fill_manual(values = my36colors)+
+  coord_flip()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))
+#Figure 1F
+
+library(Seurat)
+library(tidyverse)
+library(RColorBrewer)
+setwd("H:\\newbehcet\\newscrna\\HC+BD")
+scRNA<- readRDS("H:\\newbehcet\\newscrna\\HC+BD\\CD4TANDALL final.rds")
+table(scRNA@meta.data$celltype)
+scedata <- scRNA
+table(scedata$Tcelltype)
+
+scedata$Tcelltype <- str_replace_all(scedata$Tcelltype,"CD4 interferon-related","CD4 IFN-I-related T cells")
+
+
+library(miloR)#UMAP降维数据不会出错，TSNE不行,要有重复
+library(Seurat)
+library(ggplot2)
+library(SingleCellExperiment)
+library(SeuratWrappers)
+library(ggbeeswarm)
+library(scater)
+library(scales)
+library(forcats)
+library(data.table)
+library(stringr)
+library(dplyr)
+
+#================================================================================
+
+#                     只有两组（例如normal组和疾病组）
+
+#================================================================================
+
+#加载单细胞数据
+load("D:/KS项目/公众号文章/miloR单细胞差异丰度/PMN_sce.RData")
+DimPlot(PMN_sce,label = T)
+
+PMN_sce<- scedata
+unique(PMN_sce$group3)
+PMN_sce$group1 <- PMN_sce$group3 %>% str_replace_all("HC","aBD")
+PMN_sce$group2 <- PMN_sce$group3 %>% str_replace_all("aBD","postBD")
+Idents(PMN_sce) <- PMN_sce$group1
+PMN_sce1 <- SplitObject(PMN_sce,split.by = "group1")
+Idents(PMN_sce) <- PMN_sce$group2
+PMN_sce2 <- SplitObject(PMN_sce,split.by = "group2")
+
+PMN_sce1$BD
+PMN_sce <- PMN_sce2$postBD
+# [1] "disease" "healthy"
+table(PMN_sce$group3 )
+PMN_sce$group3 <- factor(PMN_sce$group3, levels=c("aBD","postBD"))#样本分组
+
+#miloR输入对象是SingleCellExperiment，所以我们是常用的seurat对象的话，转化一下
+PMN_sce <- as.SingleCellExperiment(PMN_sce)
+PMN_sce_milo <- miloR::Milo(PMN_sce)#milo object构建
+PMN_sce_milo <- miloR::buildGraph(PMN_sce_milo, k = 30, d = 50)#构建k-nearest neighbour graph
+#k是构建graph是需要考虑的邻近的数量，这个参数可自行调整
+#定义具有代表性的邻域
+PMN_sce_milo <- makeNhoods(PMN_sce_milo, 
+                           prop = 0.2, #随机抽取洗吧比例，一般情况0.1-0.2足够
+                           k = 30, #建议使用与buildGraph一样的k值
+                           d=50, #KNN降维数，建议使用与buildGraph一样的d值
+                           refined = TRUE)
+
+
+PMN_sce_milo <- countCells(PMN_sce_milo, meta.data = data.frame(colData(PMN_sce_milo)), 
+                        sample="orig.ident")#sample是样本重复
+#分组，类似于做差异分析的时候构建的design
+traj_design <- data.frame(colData(PMN_sce_milo))[,c("orig.ident", "group3")]#分别是重复样本ID和分组
+traj_design$orig.ident <- as.factor(traj_design$orig.ident)
+traj_design <- distinct(traj_design)
+rownames(traj_design) <- traj_design$orig.ident
+#计算cell距离
+PMN_sce_milo <- calcNhoodDistance(PMN_sce_milo, d=50)
+#差异分析结果、实验分组两者之前差异
+da_results <- testNhoods(PMN_sce_milo, 
+                         design = ~ group3, 
+                         design.df = traj_design)#分组
+PMN_sce_milo <- buildNhoodGraph(PMN_sce_milo)#构建graph for 可视化
+
+
+
+#可视化，这些可视化函数都可以与ggplot2互通，所以图片修饰上可以按照ggplot2的方式
+
+#可视化1----------------------------------------------------------------------------
+#UMAP图
+plotUMAP(PMN_sce_milo, colour_by = "celltype")
+#UMAP图展示neighborhoods
+pdf('milo_PMN11eda1.pdf', width=8, height=8)
+plotNhoodGraphDA(PMN_sce_milo, da_results, alpha=0.2) +
+  scale_fill_gradient2(low="#070091",#修改颜色
+                       mid="lightgrey",
+                       high="#910000", 
+                       name="log2FC",
+                       limits=c(-5,5),
+                       oob=squish) 
+
+dev.off()
+
+
+#可视化2----------------------------------------------------------------------------
+#蜂群图展示celltype logFC变化
+da_results <- annotateNhoods(PMN_sce_milo, da_results, coldata_col = "celltype")
+
+
+pdf('milo_PMN111ee22.pdf', width=4, height=4)
+plotDAbeeswarm(da_results, group.by = "celltype",alpha = 0.2) +
+  scale_color_gradient2(low="#070091",
+                        mid="lightgrey",
+                        high="#910000",
+                        limits=c(-5,5),
+                        oob=squish) +
+  labs(x="", y="Log2 Fold Change") +
+  theme_bw(base_size=10)+
+  theme(axis.text = element_text(colour = 'black'))
+dev.off()
+
+
+
+
+
+
+

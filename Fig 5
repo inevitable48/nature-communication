@@ -1,0 +1,331 @@
+library(monocle3)
+Idents(scedata$)
+
+data <- GetAssayData(scedata, assay = "RNA", slot ="counts")
+cell_metadata <- scedata@meta.data
+gene_annotation <- data.frame(gene_short_name = rownames(data))
+rownames(gene_annotation) <- rownames(data)
+cds <- new_cell_data_set(data,
+                         cell_metadata = cell_metadata,
+                         gene_metadata = gene_annotation)
+
+cds <- preprocess_cds(cds,num_dim = 50)
+plot_pc_variance_explained(cds)
+
+cds<- reduce_dimension(cds,preprocess_method = "PCA")
+plot_cells(cds)
+
+
+# 细胞聚类
+cds <- cluster_cells(cds)
+colnames(colData(cds))
+
+p1<- plot_cells(cds,reduction_method = "UMAP",color_cells_by = "Tcelltype") + ggtitle("cds.map")
+
+cds.embed <- cds@int_colData$reducedDims$UMAP
+int.embed <- Embeddings(scedata, reduction = "umap")
+int.embed <- int.embed[rownames(cds.embed),]
+cds@int_colData$reducedDims$UMAP <- int.embed
+p2 <- plot_cells(cds,reduction_method = "UMAP",color_cells_by = "Tcelltype")  + ggtitle("int.umap")           
+
+p1|p2
+
+cds<- reduce_dimension(cds,reduction_method = "UMAP")
+cds <- reduce_dimension(cds)
+
+cds <- learn_graph(cds)
+
+p = plot_cells(cds,color_cells_by = "Tcelltype",label_groups_by_cluster = F,label_leaves = FALSE,label_branch_points=FALSE)
+
+
+
+library(monocle)
+
+scRNA <- readRDS("H:\\newbehcet\\newscrna\\HC+BD\\T细胞\\TcellfilterCD4ribosome-related.rds")
+
+scedataT <- SplitObject(scRNA,split.by = "Tcelltypemain")
+table(scedataT$CD4$Tcelltype)
+pbmc<- scedataT$CD4
+
+
+pbmc<- scedataT
+#Extract data, phenotype data, and feature data from the SeuratObject
+data <- as(as.matrix(pbmc@assays$RNA@counts), 'sparseMatrix')
+pd <- new('AnnotatedDataFrame', data = pbmc@meta.data)
+fData <- data.frame(gene_short_name = row.names(data), row.names = row.names(data))
+fd <- new('AnnotatedDataFrame', data = fData)
+
+#构建S4对象，CellDataSet
+HSMM <- newCellDataSet(data,
+                       phenoData = pd,
+                       featureData = fd,
+                       lowerDetectionLimit = 0.5,
+                       expressionFamily = negbinomial.size())
+
+HSMM <- estimateSizeFactors(HSMM)
+HSMM <- estimateDispersions(HSMM)
+
+HSMM <- detectGenes(HSMM, min_expr = 0.1 )
+print(head(fData(HSMM)))
+
+expressed_genes <- row.names(subset(fData(HSMM),
+                                    num_cells_expressed >= 10))
+
+head(pData(HSMM))
+
+diff_test_res <- differentialGeneTest(HSMM[expressed_genes,],
+                                      fullModelFormulaStr = "~ Tcelltype")
+
+ordering_genes <- row.names (subset(diff_test_res, qval < 0.05)) ## 不要也写0.1 ，而是要写0.01。
+
+HSMM <- setOrderingFilter(HSMM, ordering_genes)
+plot_ordering_genes(HSMM)
+HSMM <- reduceDimension(HSMM, max_components = 3,
+                        num_dim = 20,
+                        method = 'DDRTree') # DDRTree方式
+
+
+
+HSMM <- orderCells(HSMM)
+
+
+allcolour<-c("#0000FF","#20B2AA","#FFA500","#9370DB","#98FB98" ,"#8A2BE2"      ,"#1E90FF","#7CFC00","#FFFF00",
+            "#DC143C","#FF00FF","#FA8072","#7B68EE","#800080","#A0522D","#D2B48C","#D2691E","#87CEEB","#40E0D0","#5F9EA0",
+            "#FF1493","#0000CD","#008B8B","#FFE4B5","#9400D3","#F08080","#228B22","#E9967A","#4682B4","#32CD32","#F0E68C","#FFFFE0","#EE82EE","#FF6347","#6A5ACD","#9932CC","#8B008B","#8B4513","#DEB887")
+
+
+allcolour=c("#DC143C","#0000FF","#20B2AA","#FFA500","#9370DB","#98FB98","#F08080","#1E90FF","#7CFC00","#FFFF00",  
+         "#808000","#FF00FF","#FA8072","#7B68EE","#9400D3","#800080","#A0522D","#D2B48C","#D2691E","#87CEEB","#40E0D0","#5F9EA0",
+         "#FF1493","#0000CD","#008B8B","#FFE4B5","#8A2BE2","#228B22","#E9967A","#4682B4","#32CD32","#F0E68C","#FFFFE0","#EE82EE",
+         "#FF6347","#6A5ACD","#9932CC","#8B008B","#8B4513","#DEB887")
+
+a1 <- plot_cell_trajectory(HSMM, color_by = "Tcelltype") + scale_color_manual(values = colour)
+
+a2 <- plot_cell_trajectory(HSMM, color_by = "State") + scale_color_manual(values = colour)
+
+a3 <- plot_cell_trajectory(HSMM, color_by = "Pseudotime") 
+
+a4 <- plot_cell_trajectory(HSMM, color_by = "labels")  + scale_color_manual(values = colour)
+
+(a1 + a2) / (a3 + a4)
+scedataT <- scRNA
+
+BiocManager::install("slingshot")
+library(slingshot)
+library(SingleCellExperiment)
+cd4_sce2 = scedataT$CD4[, !Idents(scedataT$CD4) %in% c( "Proliferation T cell" )]
+cd4_sce2$Tcelltype
+ed<-cd4$HC
+cd4_ed = ed[, !Idents(ed) %in% c( "Proliferation T cell" )]
+
+
+  table(cd4_sce2$Tcelltype)
+cd4_sce2$splitgroup<- cd4_sce2@meta.data$group %>% str_replace("oB","HC") %>% str_replace("pB","HC")
+
+
+
+table(cd4_sce2@meta.data$group)
+cd4 <- SplitObject(cd4_sce2,split.by = "splitgroup")
+
+
+sim <- as.SingleCellExperiment(cd4_sce2)
+sce <- slingshot(sim, clusterLabels = "Tcelltype", reducedDim = "UMAP", start.clus= 1)
+
+
+plot(reducedDims(sce)$UMAP, col = allcolour[sce$Tcelltype], pch=20, asp = 1)
+lines(SlingshotDataSet(sce), lwd=2, col='black')
+lines(SlingshotDataSet(sce), lwd=2, type = 'lineages', col = 'black')
+summary(sce$slingPseudotime_3)
+setwd("H:\\newbehcet\\newscrna\\HC+BD\\T细胞")
+saveRDS(sce,"tradeslighshot.Rds")
+scRNA<- readRDS("TcellfilterCD4ribosome-related.rds")
+BiocManager::install("tradeSeq")
+saveRDS
+
+library(sampling)
+df=data.frame(x=c(1,2,2,3,3,4),api=c('index','index','logout','show','show','index'))
+cd4_sce2
+
+table(cd4_sce2@meta.data$Tcelltype)
+
+cd4_sce2@meta.data$Tcelltype<- as.factor(as.character(cd4_sce2@meta.data$Tcelltype))
+
+
+sub2= strata(cd4_sce2@meta.data,stratanames='Tcelltype',size=c(rep(500,10)), method='srswor',description=T)
+sds<-cd4_sce2[,sub2$ID_unit]
+dim(sds)
+sds@assays
+
+library(tradeSeq)
+
+### Based on Slingshot object
+set.seed(6)
+icMat <- evaluateK(counts = sce, sds = sim, k = 3:7, nGenes = 100,
+                   verbose = FALSE, plot = TRUE)
+print(icMat[1:2, ])
+
+
+
+# fit negative binomial GAM
+sim <- fitGAM(scRNA)
+
+# test for dynamic expression
+ATres <- associationTest(sim)
+
+
+as.vector(as.data.frame(table(scRNA$Tcelltype))[,1])[-12]
+table(scRNA$groupS)
+
+scRNA$groupS <- str_replace(scRNA$group, "pB", "BD")
+
+library(Scillus)
+Idents(scRNA) 
+DEG <- find_diff_genes(dataset = scedataT$CD4, 
+                       clusters = c(as.vector(as.data.frame(table(scedataT$CD4$Tcelltype))[,1][str_detect(as.data.frame(table(scedataT$CD4$Tcelltype))[,1],"CD4")])[-9]),
+                       comparison = c("group", "oB", "BD"),
+                       logfc.threshold = 0,   # threshold of 0 is used for GSEA
+                       min.cells.group = 1)   # To include clusters with only 1 cell
+test_GSEA
+gsea_res <- test_GSEA(DEG,pathway = pathways.hallmark)
+plot_GSEA(gsea_res, p_cutoff = 0.1, colors = c("#0570b0", "grey", "#d7301f"))+ theme(axis.text.x = element_text(angle = 45, hjust = 1))
+plot_GSEA
+gsea_res$padj
+
+dsak <- gsea_res %>% filter(.data$padj <= 0.1) %>% mutate(pathway = str_remove(string = .data$pathway, pattern = pattern))   %>% mutate(color = -log10(.data$padj) * sign(.data$NES))
+
+
+sce<- readRDS("tradeslighshot.Rds")
+BiocManager::install("tradeSeq")
+library(tradeSeq)
+
+library(BiocParallel)
+plan("multiprocess", workers = 1)
+BPPARAM <- BiocParallel::bpparam()
+BPPARAM$workers <- 2
+
+
+library(tradeSeq)
+library(BiocParallel)
+BPPARAM <- BiocParallel::bpparam()
+BPPARAM$workers <- 1
+sim <- fitGAM(counts = sce,
+              parallel = TRUE,
+              BPPARAM = BPPARAM,
+              nknots = 6)     # fit negative binomial GAM
+
+dds<- scRNA@meta.data %>% select(.,seurat_clusters,Tcelltype) 
+dds$Tcelltype
+scRNA@meta.data$Tcelltype<- as.character(scRNA@meta.data$Tcelltype)
+scRNA<- cd4_sce2
+scRNA@meta.data[scRNA@meta.data$seurat_clusters %in% c(3),"Tcelltype"] <- "CD4 Tfh"
+scRNA@meta.data$Tcelltype <- as.character(scRNA@meta.data$Tcelltype)
+scRNA@meta.data$Tcelltype <- as.factor(scRNA@meta.data$Tcelltype)
+
+
+table(as.factor(scRNA@meta.data$Tcelltype))
+saveRDS(scRNA,"TcellfilterCD4ribosome-relatedtfhplus.rds")
+scRNA$Tcelltype
+CD4<-readRDS("TcellfilterCD4ribosome-related.rds")
+table(Idents(CD4))
+
+sce.markers <- FindAllMarkers(object = scedataT$CD4, only.pos = TRUE, 
+                              min.pct = 0.1, 
+                              thresh.use = 0.1)
+
+table(scedataT$CD4$Tcelltype)
+scedataT$CD4$Tcelltype<-as.factor(as.character(scedataT$CD4$Tcelltype))
+Idents(scedataT$CD4)<-scedataT$CD4@meta.data$Tcelltype
+test_GSEA
+sce.markers<- sce.markers %>% mutate(feature = rownames(sce.markers))
+
+gsea_res <- test_GSEA(sce.markers,pathway = pathways.hallmark)
+plot_GSEA(gsea_res, p_cutoff = 0.1, colors = c("#0570b0", "grey", "#d7301f"))+ theme(axis.text.x = element_text(angle = 45, hjust = 1))
+plot_GSEA
+gsea_res$padj
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+ids=bitr(sce.markers$gene,'SYMBOL','ENTREZID','org.Hs.eg.db') ## 将SYMBOL转成ENTREZID
+sce.markers=merge(sce.markers,ids,by.x='gene',by.y='SYMBOL')
+View(sce.markers)
+
+## 函数split()可以按照分组因子，把向量，矩阵和数据框进行适当的分组。
+## 它的返回值是一个列表，代表分组变量每个水平的观测。
+gcSample=split(sce.markers$ENTREZID, sce.markers$cluster) 
+## KEGG
+xx <- compareCluster(gcSample,
+                     fun = "enrichKEGG",
+                     organism = "hsa", pvalueCutoff = 0.05)
+p <- dotplot(xx)
+p + theme(axis.text.x = element_text(
+  angle = 45,
+  vjust = 0.5, hjust = 0.5
+))
+
+scRNA$celltype <- Idents(scRNA)
+table(scRNA$celltypemain)
+scRNA$celltypemain<- as.character(scRNA$celltype)
+
+
+scRNA$celltypemain[str_detect(scRNA$celltypemain,"Mono$")] <- "Monocyte"
+scRNA$celltypemain[str_detect(scRNA$celltypemain,"cDC")] <- "Monocyte"
+
+
+
+scRNA$celltypemain[str_detect(scRNA$celltypemain,"^B")] <- "B cell"
+scRNA$celltypemain[str_detect(scRNA$celltypemain,"T$")] <- "T cell"
+scRNA$celltypemain[str_detect(scRNA$celltypemain,"NK$")] <- "NK cell"
+scRNA$celltypemain[str_detect(scRNA$celltypemain,"DC$")] <- "DC cell"
+scRNA$celltypemain[str_detect(scRNA$celltypemain,"Plasma cell")] <- "B cell"
+scRNA$group3 <- str_replace(scRNA$group,"BD","aBD")
+scRNA$group3 <- str_replace(scRNA$group3,"pB","aBD")
+scRNA$group3 <- str_replace(scRNA$group3,"oB","postBD")
+scRNA$group3 <- factor(as.character(scRNA$group3),c("HC","aBD","postBD"))
+
+scedataT <- SplitObject(scRNA,split.by = "celltypemain")
+
+table(scRNA$celltypemain)
+table(scedataT$`T cell`$celltype, scedataT$`T cell`$group3)#各样本不同细胞群细胞数
+Cellratio <- prop.table(table(scedataT$`T cell`$celltype, scedataT$`T cell`$group3), margin = 2)#计算各组样本不同细胞群比例
+Cellratio <- as.data.frame(Cellratio)
+colnames(Cellratio) <- c("celltype","sample","ratio") #对列名重命名
+Cellratio$sample <- factor(Cellratio$sample,levels = c("HC","aBD",'postBD'))  #调整画图的x轴坐标顺序
+Cellratio<- filter(Cellratio,ratio>0)
+
+
+
+library(ggplot2)
+library(ggalluvial)
+p<-ggplot(Cellratio,aes(x=sample,y=ratio,fill=celltype,stratum=celltype,alluvium=celltype))+
+  geom_col(width = 0.4,color=NA)+
+  geom_flow(width=0.4,alpha=0.2,knot.pos=0)+ # knot.pos参数可以使连线变直
+  scale_fill_manual(values=allcolor)+
+  theme_classic()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))+
+  theme(legend.position = 'top') #取消图例展示
+p
+ggsave(plot = p,"celltype_ratio.pdf",width = 10,height = 8)
+
+CD4 <- readRDS("T细胞/TcellfilterCD4ribosome-relatedtfhplus.rds")
+metadata <- FetchData(CD4, "Tcelltype")
+
+metadata$cell_id <- rownames(metadata)
+metadata$sample_id <- metadata$Tcelltype
+### dplyr中的left_join合并
+metadata <- left_join(x = metadata, y = metatable, by = "sample_id")
+### 重新加行名
+rownames(metadata) <- metadata$cell_id
+
+### 通过AddMetaData直接补入15列
+seu_obj <- AddMetaData(scRNA, metadata = metadata)
+seu_obj$TcelltypeC <- paste(seu_obj$Tcelltype, seu_obj$celltype,sep = "") 
+seu_obj$TcelltypeC <- seu_obj$TcelltypeC[!str_detect(seu_obj$TcelltypeC,"^NACD..T")]
+
+seu_obj$TcelltypeC <- seu_obj$TcelltypeC %>% str_replace_all(.,"^NA","")
+seu_obj$TcelltypeC <- seu_obj$TcelltypeC %>% str_replace_all(.,"CD..T$","")
+seu_obji$TcelltypeC <- seu_obji$TcelltypeC %>% str_replace_all(.,"CD4. Proliferating T$","")
+table(seu_obj$TcelltypeC)
+table(-str_detect(seu_obj$TcelltypeC,"NACD4.T"))
+seu_obji <- seu_obj[,!str_detect(seu_obj$TcelltypeC,"^NA$")]
+table(seu_obji$TcelltypeC)
+seu_obji$TcelltypeC <- seu_obji$TcelltypeC %>% str_replace_all(.,"^NA","")

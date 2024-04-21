@@ -66,6 +66,79 @@ saveRDS(scedata, "scedata4HC4BD3.rds")
 ggsave("UMAP_plot.pdf", plot = p1, width = 10, height = 8)
 ggsave("tSNE_plot.pdf", plot = p2, width = 10, height = 8)
 
+
+
+genes<- c("S100A12","S100A8","HLA-DPA1","HLA-DPB1","HLA-DRA","HLA-DRB1","IFITM3","ISG15","IFI30","IL17RA","CCR1","TNFAIP2","RNASEK","ATP6V0C","PPBP","PF4",'CD22',"IGHA1","IGHG1","IGLC","CD22","IGKC","S1PI2","LRMP","SUGCT","MME","MKI67","AICDA","CD27","AIM2","TNFRSF13B","CD38","JCHAIN")
+jjDotPlot(object =scRNA,
+          gene = genes,
+          gene.order = genes,
+          cluster.order = 0:29,
+          ytree = T)
+genes<- c("S100A12","S100A8","HLA-DPA1","HLA-DPB1","HLA-DRA","HLA-DRB1","IFITM3","ISG15","IFI30","IL17RA","CCR1","TNFAIP2","RNASEK","ATP6V0C","PPBP","PF4",'CD22',"IGHA1","IGHG1","IGLC","CD22","IGKC","S1PI2","LRMP","SUGCT","MME","MKI67","AICDA","CD27","AIM2","TNFRSF13B","CD38","JCHAIN")
+jjDotPlot(object = scedata,
+          gene = genes,
+          gene.order = genes,
+          cluster.order = 0:29,
+          ytree = T)
+
+
+scedata
+sce1 = scedata[,!scedata@meta.data$seurat_clusters %in% c(29)]
+scedata<- sce1
+
+devtools::install_github('junjunlab/jjPlot')
+
+library(jjPlot)
+library(Seurat)
+library(tidyverse)
+library(ggsci)
+library(clustree)
+library(metap)
+library(harmony)
+library(patchwork)
+library(MySeuratWrappers)
+##加载相关包
+my36colors <-c('#E5D2DD', '#53A85F', '#F1BB72', '#F3B1A0', '#D6E7A3', '#57C3F3', '#476D87', '#E95C59', '#E59CC4', '#AB3282', '#23452F', '#BD956A', '#8C549C', '#585658', '#9FA3A8', '#E0D4CA', '#5F3D69', '#C5DEBA', '#58A4C3', '#E4C755', '#F7F398', '#AA9A59', '#E63863', '#E39A35', '#C1E6F3', '#6778AE', '#91D0BE', '#B53E2B', '#712820', '#DCC1DD', '#CCE0F5',  '#CCC9E6', '#625D9E', '#68A180', '#3A6963', '#968175')#颜色设置  
+VlnPlot(scedata, features = genes,  
+        stacked=T,pt.size=0,  
+        cols = my36colors,
+        direction = "horizontal",
+        x.lab = NULL, y.lab = NULL)+
+  theme(axis.text.x = element_blank(),   
+        axis.ticks.x = element_blank())
+
+
+
+
+# facet plot
+ggplot(scedata,aes(x = id,y = exp)) +
+  geom_violin(aes(fill = id),trim = T) +
+  facet_wrap(~gene,ncol = 1,
+             strip.position = 'right',
+             scales = 'fixed') +
+  theme_bw(base_size = 12) +
+  theme(strip.text.y = element_text(angle = 0,hjust = 0),
+        panel.grid = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        aspect.ratio = 0.05,
+        strip.background.y = element_rect(fill = NA,color = NA),
+        panel.spacing = unit(0,'cm'))
+Idents(scedata) <- scedata$seurat_clusters
+
+new.cluster.ids <- c("LGALS2+Mono","Naive CD4T", "S100A12+Mono", "Memory CD4 T","Activated NK", "Cytotoxicity CD8 T", "Naive CD8 T", "S100A12+Mono", "MHC_II+Mono", "CD16+Mono","Innate_like T","Interferon_related Mono","Naive B","Effector CD4 T","Memory CD8 T","Plasma Cell","IL17+Mono","IL17+Mono","cDC","Megacaryocyte_like Mono","Eryth","Resting NK","Cytotoxicity CD4 T","Megacaryocyte","Intermediate Mono","B Cell","Proliferation T","pDC","Memory B")
+names(new.cluster.ids) <- levels(scedata)
+pbmc <- RenameIdents(scedata, new.cluster.ids)
+DimPlot(pbmc, reduction = 'umap', 
+        label = TRUE, pt.size = 0.5,repel = T) + NoLegend()
+pbmc@meta.data$combine<-as.character(Idents(pbmc))
+Idents(scedata)<- scedata$RNA_snn_res.0.9
+Idents(scedata)<-factor(Idents(scedata),levels = seq(0,29,1))
+new.cluster.ids <- c("CD4+T","CD4+T", "CD14+Mono", "CD56dim NK","CD8+T", "CD8+T", "CD4+T", "CD14+Mono", "B naive", "CD8+T","Plasma cell","CD16+Mono","CD4+T","CD8+T","CD14+Mono","Megakaryocyte","CD56bright NK","cDC","Immature Neutrophil","CD8+T","CD4+T","B naive","Immature Neutrophil","CD4+ Proliferating T","B memory","Plasma cell","pDC","Erythrocyte","CD14+Mono","HPSC")
+
+names(new.cluster.ids) <- levels(scedata)
+pbmc <- RenameIdents(scedata, new.cluster.ids)
+
 #Figure 1E
 scRNA$Tcelltype<- Idents(scRNA)
 scedata<- scRNA

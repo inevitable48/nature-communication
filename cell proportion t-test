@@ -1,0 +1,111 @@
+library(Seurat)
+library(tidyverse)
+library(RColorBrewer)
+setwd("H:\\newbehcet\\newscrna\\HC+BD")
+scRNA<- readRDS("H:\\newbehcet\\newscrna\\HC+BD\\T细胞\\newTcell.rds")
+table(scRNA@meta.data$Tcelltype)
+scedata <- scRNA
+table(scedata$Tcelltype)
+
+scedata$Tcelltype <- str_replace_all(scedata$Tcelltype,"CD4 interferon-related","CD4 IFN-I-related T cells")
+
+scedata <- scRNA
+scedata$groupS <- str_replace_all(scedata$groupS,"pB","ABD")
+
+Idents(scedata) <- scedata$Tcelltype
+table(scedata$group)
+scedata$groupS <- str_replace_all(scedata$group,"BD","ABD")
+scedata$groupS <- str_replace_all(scedata$groupS,"oB","BDNU")
+scedata$groupS <- str_replace_all(scedata$groupS,"pB","ABD")
+
+
+table(scedata$group)#查看各组细胞数
+
+prop.table(table(Idents(scedata)))
+
+table(Idents(scedata), scedata$new.ident)#各组不同细胞群细胞数
+Cellratio <- prop.table(table(Idents(scedata), scedata$new.ident), margin = 2)#计算各组样本不同细胞群比例
+Cellratio <- data.frame(Cellratio)
+library(reshape2)
+cellper <- dcast(Cellratio,Var2~Var1, value.var = "Freq")#长数据转为宽数据
+rownames(cellper) <- cellper[,1]
+cellper <- cellper[,-1]
+
+rownames(cellper)
+###添加分组信息
+sample <-rownames(cellper)
+group <- c(rep("aBD",4),rep("HC",4),rep("oB",3),rep("pB",3))
+
+samples <- data.frame(sample, group)#创建数据框
+
+rownames(samples)=samples$sample
+cellper$sample <- samples[rownames(cellper),'sample']#R添加列
+cellper$group <- samples[rownames(cellper),'group']#R添加列
+cellper$group <- factor(cellper$group,levels = c("HC","aBD","pB","oB") )
+
+cellper<-cellper[order(cellper$group),]
+
+cellper$paired <- c(1:8,9:11,9:11)
+###作图展示
+pplist = list()
+aa<-as.data.frame(table(Idents(scedata)))
+sce_groups = aa$Var1
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+library(tidyverse)
+library(rstatix)
+
+for(group_ in sce_groups){
+
+  cellper_  = cellper %>% select(one_of(c('sample','group',group_)))#选择一组数据
+  colnames(cellper_) = c('sample','group','percent')#对选择数据列命名
+  cellper_$percent = as.numeric(cellper_$percent)#数值型数据
+  cellper_ <- cellper_ %>% group_by(group) %>% mutate(upper =  quantile(percent, 0.75), 
+                                                      lower = quantile(percent, 0.25),
+                                                      mean = mean(percent),
+                                                      median = median(percent))#上下分位数
+  print(group_)
+  print(cellper_$median)
+  
+  pp1 = ggplot(cellper_, aes(x=group, y=percent)) + # ggplot作图
+    stat_summary(fun=mean, geom="point", color="grey60", size = 2) + # 增加均值点的大小
+    geom_jitter(shape = 21, aes(fill=group), width = 0.25, size = 3) + # 增加点的大小
+    theme_classic() +
+    theme(
+      axis.text = element_text(size = 10),
+      axis.title = element_text(size = 10),
+      legend.text = element_text(size = 10),
+      legend.title = element_text(size = 10),
+      plot.title = element_text(size = 10, face = 'bold', hjust = 0.5), # 调整标题大小，并使其加粗、居中
+      legend.position = 'none'
+    ) +
+    labs(title = group_, y = 'Percentage') +
+    geom_errorbar(aes(ymin = lower, ymax = upper), col = "grey60", width = 0.2) # 调整误差线宽度  
+  my_comparisons0 <- list( c("pB", "HC"),c("aBD", "oB"))
+  # 假设我们有三个组 A, B, C 在 data 数据框中
+  # 我们要比较所有可能的组合并进行校正
+
+  pp1 = pp1 + stat_compare_means(comparisons =my_comparisons0,size = 3,method = "t.test",method.args = list(var.equal = TRUE))
+  pplist[[group_]] = pp1
+  
+}
+
+library(cowplot)
+plot_grid(pplist$`CD4 naive`,
+          pplist$`CD8 naive`,
+          pplist$`CD4 Treg`,
+          pplist$`CD8 Effector GZMB+`,
+          pplist$`CD4 Centeral Memory`,
+          pplist$`CD4 Effector Memory`,
+          pplist$`CD8 Effector GZMK+`,
+          pplist$`CD4 Th1`,
+          pplist$`CD4 Th2`,
+          pplist$`CD4 Th17`,
+          pplist$`CD4 interferon-related`,
+          pplist$`CD8 STAT5A+`,
+          pplist$`Proliferation T cell`,
+          pplist$NKT,ncol = 8)
+
+
+

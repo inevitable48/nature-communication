@@ -1,0 +1,81 @@
+#Figure 3a 3b
+setwd("H:\\newbehcet\\newscrna\\HC+BD")
+scRNA<- readRDS("T细胞/TcellfilterCD4ribosome-relatedtfhplus.rds")
+library(scRNAtoolVis)
+genes <- c("CD3D","CD4","CD8A")
+genes<- c("CD3D","LYZ","CD14","KLRF1","GZMB","CD8A","IL4R","CD79A","FCGR3A","PPBP","GZMK","CD1C","CLEC10A","CEACAM8","PCNA","LILRA4","CLEC4C","MZB1","HBA1","SOX4")
+Idents(pbmc)
+
+cd4 <- readRDS("T细胞/TcellfilterCD4ribosome-relatedtfhplus.rds")
+genes_to_check = c('CD3G', 'CD4', 'CD8A', 'FOXP3',"IL17RA","CCR7","IL7R","CD27",
+                   'TNF','IFNG','KLRK1','NCR1',"CXCR5","PDCD1","TOX","IL21","TBX21","STAT4","GATA3","STAT6","IL13","STAT5A","BCL6","IL6ST","TOX2")
+genes_new<- c("CD3G", "CD8A", "CXCR3", "CCL5","STAT5A", "GZMB","GZMK","PDCD1","NCR1","MKI67", "CCR7","CD28","FOXP3","CCR5", "CD40LG", "IL17RA", "IFNG", "TBX21", "IFI6", "ISG15", "IFI44L", "MX1")
+Idents(cd4)<-cd4$Tcelltype
+levels(cd4)
+cd4$Tcelltype <- factor(cd4$Tcelltype,levels = c("CD4 interferon-related","CD4 Th1","CD4 Th2","CD4 Th17","CD4 Effector Memory","CD4 Centeral Memory","CD4 Tfh","CD4 Treg","CD4 naive","Proliferation T cell","NKT","CD8 CCL5+","CD8 Effector GZMK+","CD8 Effector GZMB+","CD8 naive"))
+cd4$Tcelltype <- as.character(cd4$Tcelltype)
+cd4$Tcelltype <- as.factor(cd4$Tcelltype)
+
+jjDotPlot(object = scRNA,id = "celltype.main",
+          gene = genes,
+          ytree = F)
+
+FeatureCornerAxes(object = scRNA,reduction = 'umap',
+                  groupFacet = NULL,
+                  relLength = 0.5,pSize = 0.3,
+                  relDist = 0.2,
+                  features = c("CD3D","CD8A", "CD79A","KLRF1"),
+                  aspect.ratio = 1)
+
+FeatureCornerAxes(object = scRNA,reduction = 'umap',
+                  groupFacet = NULL,
+                  relLength = 0.5,pSize = 0.3,
+                  relDist = 0.2,
+                  features = c("CD33","PPBP","SOX4","HBA1"),
+                  aspect.ratio = 1)
+
+FeatureCornerAxes(object = scRNA,reduction = 'umap',
+                  groupFacet = NULL,
+                  relLength = 0.5,pSize = 0.3,
+                  relDist = 0.2,
+                  features = c("MX1","IFI44L","OAS1","ISG15","OAS3"),
+                  aspect.ratio = 1)
+
+FeatureCornerAxes(object = scRNA,reduction = 'umap',
+                  groupFacet = NULL,
+                  relLength = 0.5,pSize = 0.3,
+                  relDist = 0.2,
+                  features = c("MX2","IFI6","HERC5","XAF1","EPSTI1"),
+                  aspect.ratio = 1)
+
+genes1 <- c("CD3D","CD4","IL23R","CCR6","IL1R1","KLRB1","STAT3","IL17A")
+genes2 <- c("CD3D","CD4","CCR5","SLAMF1","TNFSF4","CD40LG","ICOS","IL21","PDCD1","STAT3","IL21R")
+genes3NKT <- c("IFNG","IFNGR1","IFNGR2","STAT1")
+genes<- c("SMAD2","SMAD3","SMAD4","IL12A","IL10")
+
+scRNA$celltype<- Idents(scRNA)
+scRNA@active.ident
+
+jjDotPlot(object = scRNA,
+          gene = genes,
+          gene.order = genes,id = "celltype",
+          ytree = F)
+
+table(Idents(scRNA))
+
+new.cluster.ids <- c("CD4 naive","CD8 naive", "CD4 Treg", "CD4 naive","CD8 Effector GZMB+", "CD4 Centeral Memory", "CD4 Effector Memory", "CD8 Effector GZMB+", "CD8 Effector GZMK+", "CD4 Th2","CD4 Th17","CD4 Th1","CD4 interferon-related","CD4 ribosome-related","CD4 ribosome-related","Proliferation T cell","NKT","CD8 CCL5+","CD8 CCL5+")
+
+names(new.cluster.ids) <- levels(scedataT)
+pbmc <- RenameIdents(scedataT, new.cluster.ids)
+
+p1 <- DimPlot(pbmc,pt.size=0.001,label = T,reduction = 'umap',cols = allcolor,repel = T,label.size = 5)
+p2 <- DimPlot(pbmc,pt.size=0.001,label = T,reduction = 'tsne',cols = allcolor,repel = T)
+p1+p2
+
+
+
+#Figure3c
+
+
+
+

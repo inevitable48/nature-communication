@@ -1,0 +1,233 @@
+#Figure 2A-2C
+# single-cell analysis package
+library(Seurat)
+
+# plotting and data science packages
+library(tidyverse)
+library(cowplot)
+library(patchwork)
+
+# co-expression network analysis packages:
+library(WGCNA)
+library(hdWGCNA)
+
+# using the cowplot theme for ggplot
+theme_set(theme_cowplot())
+
+# set random seed for reproducibility
+set.seed(12345)
+
+# optionally enable multithreading
+enableWGCNAThreads(nThreads = 8)
+seurat_obj <- readRDS("scRNA.rds")
+
+DimPlot(seurat_obj, group.by = "cell_type", label = T) + umap_theme() + ggtitle("Zhou et al Control Cortex") + NoLegend()
+seurat_obj <- SetupForWGCNA(
+    seurat_obj,
+    gene_select = "fraction",
+    fraction = 0.05,
+    wgcna_name = "tutorial" # hdWGCNA实验名称
+)
+
+# 构造metacell
+seurat_obj <- MetacellsByGroups(
+    seurat_obj = seurat_obj,
+    group.by = c("cell_type", "Sample"),  # 将来自同一Sample的同种cell_type构造成metacell
+    reduction = "harmony", # 用于执行KNN算法，此处harmony为通过harmony校正过的PCA
+    k = 25, # KNN参数
+    max_shared = 10, # 两个metacell可共享的最大细胞数
+    ident.group = "cell_type"  # Idents名
+)
+
+# 标准化metacell表达矩阵
+seurat_obj <- NormalizeMetacells(seurat_obj)
+seurat_obj <- SetDatExpr(
+    seurat_obj,
+    group_name = "INH", # 挑选感兴趣的细胞类型，可以c("INH", "EX")挑选多个感兴趣的细胞类型
+    group.by = "cell_type", # INH所在的metadata列名
+    assay = "RNA",
+    slot = "data"
+)
+seurat_obj <- TestSoftPowers(
+    seurat_obj,
+    networkType = "signed" # 此外，还可选择“unsigned”或“signed hybrid”参数
+)
+
+plot_list <- PlotSoftPowers(seurat_obj)
+
+wrap_plots(plot_list, ncol=2)
+
+seurat_obj <- ConstructNetwork(
+    seurat_obj, soft_power = 8, # 上图中黑色圆圈中的最佳软阈值
+    setDatExpr = FALSE,
+    tom_name = 'INH' # TOM矩阵名称，运行后会在当前目录生成一个TOM文件夹保存TOM矩阵
+)
+
+PlotDendrogram(seurat_obj, main='INH hdWGCNA Dendrogram')
+
+# harmony前需要进行正态化（Scale）
+seurat_obj <- ScaleData(seurat_obj, features = VariableFeatures(seurat_obj))
+
+# 计算所有的MEs，比较耗时
+seurat_obj <- ModuleEigengenes(
+    seurat_obj,
+    group.by.vars = "Sample"  # 根据Sample去批次
+)
+
+# compute eigengene-based connectivity (kME):
+seurat_obj <- ModuleConnectivity(
+    seurat_obj,
+    group.by = 'cell_type', group_name = 'INH'  # 这里继续计算INH（感兴趣的细胞类型）的kME
+)
+
+# 重命名module，以表明这些module由INH计算所得
+seurat_obj <- ResetModuleNames(
+    seurat_obj,
+    new_name = "INH-M"
+)
+
+# 可视化每个模块中的基因的kME
+PlotKMEs(seurat_obj, ncol = 5, n_hubs = 10)
+
+# 查看相关性矩阵
+mt_cor <- GetModuleTraitCorrelation(seurat_obj)
+
+names(mt_cor)
+# 'cor''pval''fdr'
+
+names(mt_cor$cor)
+# 'all_cells''INH''EX''OPC''ODC''ASC''MG'
+
+head(mt_cor$cor$all_cells[, 1:5])
+
+PlotModuleTraitCorrelation(
+  seurat_obj,
+  label = 'fdr',  # 可选pval、fdr作为显著性分数
+  label_symbol = 'stars',  # 以*号作为显著性标记，numeric则显示数值
+  text_size = 2,
+  text_digits = 2,
+  text_color = 'white',
+  high_color = 'yellow',
+  mid_color = 'black',
+  low_color = 'purple',
+  plot_max = 0.2,
+  combine=TRUE
+)
+#Figure 2d e f(ef from online database metascape)
+ library(DESeq2)
+  library(dplyr)
+  a<-apply(data,2, as.integer) #data==数据
+  rownames(a)<-rownames(data)
+  data<-as.data.frame(a)
+  condition <- factor(c(rep("0",ncontrol),rep("1",ncase)), levels = c("0","1"))
+  colData <- data.frame(row.names=colnames(data), condition)
+  colData
+  #构建dds对象,开始DESeq流程
+  dds = DESeqDataSetFromMatrix(countData=data,
+                               colData=colData,
+                               design=~condition)
+  dds = DESeq(dds)
+  dds
+  res = results(dds, contrast=c("condition", "1","0"))
+  DEG_all<-data.frame(rownames(res),res$log2FoldChange,res$pvalue,res$padj,stringsAsFactors = FALSE)
+  colnames(DEG_all)<-c("Gene","logFC","pval","adjp")
+  up_index<-which(DEG_all$adjp < 0.05 & DEG_all$logFC > 1)
+  DEG_up<-DEG_all[up_index,]
+  down_index<-which(DEG_all$adjp < 0.05 & DEG_all$logFC < (-1))
+  DEG_down<-DEG_all[down_index,]
+  DEG_select<-rbind(DEG_up,DEG_down)
+  DEG<-data.frame(DEG_select$Gene,stringsAsFactors = FALSE)
+  print(paste("共获得",nrow(DEG),"个差异基因",sep=" "))
+  
+
+#Figure 2g
+library(tidyverse)
+library(IOBR)
+library(reshape2)
+library(ggplot2)
+library(ggpubr)
+library(ggsci)
+library(pheatmap)
+library(cowplot)
+library(ComplexHeatmap)
+data <- read_tsv("TCGA_tpm_mRNA.txt") %>%
+  column_to_rownames("patient_ID") %>%
+  t() %>%
+  as.data.frame()
+data[1:3, 1:3]
+
+# 单一免疫浸润算法的实现与绘图：以CIBERSORT为例
+cibersort <- deconvo_tme(eset = data, 
+                         method = "cibersort", 
+                         arrays = FALSE, 
+                         perm = 10) # 理论上来说置换次数越大则结果越准确，同样运行速度也越慢，这里以10次为例
+head(cibersort)
+write_tsv(cibersort, "cibersort.txt")
+
+# 可视化
+res <- cell_bar_plot(input = cibersort, 
+                     title = "CIBERSORT Cell Fraction",
+                     legend.position = "top",
+                     coord_filp = TRUE)
+ggsave("cibersort.pdf", width = 10, height = 8)
+
+# 换一种算法：quantiseq
+quantiseq <- deconvo_tme(eset = data,
+                         tumor = TRUE,
+                         arrays = FALSE, 
+                         scale_mrna = TRUE, 
+                         method = "quantiseq")
+head(quantiseq)
+# 添加NCPS分组,这是之前整理好的临床数据，group可根据scor
+NCPS_group <- read_tsv("TCGA_NCPs.txt")
+NCPS_quantiseq <- NCPS_group %>%
+  dplyr::select(ID, TCGA_NCPS, NCPS_Group) %>%
+  inner_join(quantiseq, "ID")
+
+# ggplot2绘图
+head(NCPS_quantiseq)
+box_data <- NCPS_quantiseq[-2]
+# 数据转换
+box_data1 <- melt(box_data,
+                  id.vars = c("ID", "NCPS_Group"))#转换成长数据
+head(box_data1)
+
+ggplot(box_data1, 
+       aes(variable, value, fill = NCPS_Group)) +
+  geom_boxplot(alpha = 0.85) +
+  scale_y_continuous(name = "CIBERSORT Cell Fraction") +
+  scale_fill_manual(values=c(red, blue))+
+  scale_x_discrete(name = "") +
+  theme_classic() +
+  theme(text = element_text(size = 10),
+        legend.position = "top",
+        axis.text.x  = element_text(angle=60, vjust=1,hjust=1)) + 
+  stat_compare_means(aes(label = ..p.signif..))
+
+ggsave("quantiseq_Boxplot.pdf", width = 10, height = 6)
+
+# 所有免疫浸润分析，非肿瘤推荐xcell：
+cibersort <- deconvo_tme(eset = data, method = "cibersort", arrays = FALSE, perm = 10)
+epic <- deconvo_tme(eset = data, method = "epic", arrays = FALSE)
+mcp <- deconvo_tme(eset = data, method = "mcpcounter")
+xcell <- deconvo_tme(eset = data, method = "xcell", arrays = FALSE)
+estimate <- deconvo_tme(eset = data, method = "estimate")
+timer <- deconvo_tme(eset = data, method = "timer", group_list = rep("uvm", dim(data)[2]))
+quantiseq <- deconvo_tme(eset = data, method = "quantiseq", tumor = TRUE, arrays = FALSE, scale_mrna = TRUE)
+
+# 合并所有分析结果
+tme_combine <- cibersort %>% 
+  inner_join(mcp, "ID") %>% 
+  inner_join(xcell, "ID") %>%
+  inner_join(epic, "ID") %>% 
+  inner_join(estimate, "ID") %>% 
+  inner_join(timer, "ID") %>% 
+  inner_join(quantiseq, "ID")
+head(tme_combine)
+write_tsv(tme_combine, "tme_combine.txt")
+
+
+
+
+
+

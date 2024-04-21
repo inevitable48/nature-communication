@@ -354,4 +354,28 @@ Heatmap(plotdata,##对基因表达量进行限定,也可以进行转置t后scale
                                   title_gp = gpar(fontsize = 10, fontface = "bold")))
 
 #Figure 3e 3f
-
+ library(DESeq2)
+  library(dplyr)
+  a<-apply(data,2, as.integer) #data==数据
+  rownames(a)<-rownames(data)
+  data<-as.data.frame(a)
+  condition <- factor(c(rep("0",ncontrol),rep("1",ncase)), levels = c("0","1"))
+  colData <- data.frame(row.names=colnames(data), condition)
+  colData
+  #构建dds对象,开始DESeq流程
+  dds = DESeqDataSetFromMatrix(countData=data,
+                               colData=colData,
+                               design=~condition)
+  dds = DESeq(dds)
+  dds
+  res = results(dds, contrast=c("condition", "1","0"))
+  DEG_all<-data.frame(rownames(res),res$log2FoldChange,res$pvalue,res$padj,stringsAsFactors = FALSE)
+  colnames(DEG_all)<-c("Gene","logFC","pval","adjp")
+  up_index<-which(DEG_all$adjp < 0.05 & DEG_all$logFC > 1)
+  DEG_up<-DEG_all[up_index,]
+  down_index<-which(DEG_all$adjp < 0.05 & DEG_all$logFC < (-1))
+  DEG_down<-DEG_all[down_index,]
+  DEG_select<-rbind(DEG_up,DEG_down)
+  DEG<-data.frame(DEG_select$Gene,stringsAsFactors = FALSE)
+  print(paste("共获得",nrow(DEG),"个差异基因",sep=" "))
+  

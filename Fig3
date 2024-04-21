@@ -76,6 +76,282 @@ p1+p2
 
 #Figure3c
 
+library(Seurat)
+library(tidyverse)
+library(RColorBrewer)
+setwd("H:\\newbehcet\\newscrna\\HC+BD")
+scRNA<- readRDS("H:\\newbehcet\\newscrna\\HC+BD\\T细胞\\newTcell.rds")
+table(scRNA@meta.data$Tcelltype)
+scedata <- scRNA
+table(scedata$Tcelltype)
+
+scedata$Tcelltype <- str_replace_all(scedata$Tcelltype,"CD4 interferon-related","CD4 IFN-I-related T cells")
+
+scedata <- scRNA
+scedata$groupS <- str_replace_all(scedata$groupS,"pB","ABD")
+
+Idents(scedata) <- scedata$Tcelltype
+table(scedata$group)
+scedata$groupS <- str_replace_all(scedata$group,"BD","ABD")
+scedata$groupS <- str_replace_all(scedata$groupS,"oB","BDNU")
+scedata$groupS <- str_replace_all(scedata$groupS,"pB","ABD")
 
 
+table(scedata$group)#查看各组细胞数
+
+prop.table(table(Idents(scedata)))
+
+table(Idents(scedata), scedata$new.ident)#各组不同细胞群细胞数
+Cellratio <- prop.table(table(Idents(scedata), scedata$new.ident), margin = 2)#计算各组样本不同细胞群比例
+Cellratio <- data.frame(Cellratio)
+library(reshape2)
+cellper <- dcast(Cellratio,Var2~Var1, value.var = "Freq")#长数据转为宽数据
+rownames(cellper) <- cellper[,1]
+cellper <- cellper[,-1]
+
+rownames(cellper)
+###添加分组信息
+sample <-rownames(cellper)
+group <- c(rep("aBD",4),rep("HC",4),rep("oB",3),rep("pB",3))
+
+samples <- data.frame(sample, group)#创建数据框
+
+rownames(samples)=samples$sample
+cellper$sample <- samples[rownames(cellper),'sample']#R添加列
+cellper$group <- samples[rownames(cellper),'group']#R添加列
+cellper$group <- factor(cellper$group,levels = c("HC","aBD","pB","oB") )
+
+cellper<-cellper[order(cellper$group),]
+
+cellper$paired <- c(1:8,9:11,9:11)
+###作图展示
+pplist = list()
+aa<-as.data.frame(table(Idents(scedata)))
+sce_groups = aa$Var1
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+library(tidyverse)
+library(rstatix)
+
+for(group_ in sce_groups){
+
+  cellper_  = cellper %>% select(one_of(c('sample','group',group_)))#选择一组数据
+  colnames(cellper_) = c('sample','group','percent')#对选择数据列命名
+  cellper_$percent = as.numeric(cellper_$percent)#数值型数据
+  cellper_ <- cellper_ %>% group_by(group) %>% mutate(upper =  quantile(percent, 0.75), 
+                                                      lower = quantile(percent, 0.25),
+                                                      mean = mean(percent),
+                                                      median = median(percent))#上下分位数
+  print(group_)
+  print(cellper_$median)
+  
+  pp1 = ggplot(cellper_, aes(x=group, y=percent)) + # ggplot作图
+    stat_summary(fun=mean, geom="point", color="grey60", size = 2) + # 增加均值点的大小
+    geom_jitter(shape = 21, aes(fill=group), width = 0.25, size = 3) + # 增加点的大小
+    theme_classic() +
+    theme(
+      axis.text = element_text(size = 10),
+      axis.title = element_text(size = 10),
+      legend.text = element_text(size = 10),
+      legend.title = element_text(size = 10),
+      plot.title = element_text(size = 10, face = 'bold', hjust = 0.5), # 调整标题大小，并使其加粗、居中
+      legend.position = 'none'
+    ) +
+    labs(title = group_, y = 'Percentage') +
+    geom_errorbar(aes(ymin = lower, ymax = upper), col = "grey60", width = 0.2) # 调整误差线宽度  
+  my_comparisons0 <- list( c("pB", "HC"),c("aBD", "oB"))
+  # 假设我们有三个组 A, B, C 在 data 数据框中
+  # 我们要比较所有可能的组合并进行校正
+
+  pp1 = pp1 + stat_compare_means(comparisons =my_comparisons0,size = 3,method = "t.test",method.args = list(var.equal = TRUE))
+  pplist[[group_]] = pp1
+  
+}
+
+library(cowplot)
+plot_grid(pplist$`CD4 naive`,
+          pplist$`CD8 naive`,
+          pplist$`CD4 Treg`,
+          pplist$`CD8 Effector GZMB+`,
+          pplist$`CD4 Centeral Memory`,
+          pplist$`CD4 Effector Memory`,
+          pplist$`CD8 Effector GZMK+`,
+          pplist$`CD4 Th1`,
+          pplist$`CD4 Th2`,
+          pplist$`CD4 Th17`,
+          pplist$`CD4 interferon-related`,
+          pplist$`CD8 STAT5A+`,
+          pplist$`Proliferation T cell`,
+          pplist$NKT,ncol = 8)
+
+#Figure 3d
+
+
+library(Seurat)
+library(tidyverse)
+library(RColorBrewer)
+setwd("H:\\newbehcet\\newscrna\\HC+BD")
+scRNA<- readRDS("H:\\newbehcet\\newscrna\\HC+BD\\CD4TANDALL final.rds")
+table(scRNA@meta.data$celltype)
+scedata <- scRNA
+table(scedata$Tcelltype)
+
+scedata$Tcelltype <- str_replace_all(scedata$Tcelltype,"CD4 interferon-related","CD4 IFN-I-related T cells")
+
+
+library(miloR)#UMAP降维数据不会出错，TSNE不行,要有重复
+library(Seurat)
+library(ggplot2)
+library(SingleCellExperiment)
+library(SeuratWrappers)
+library(ggbeeswarm)
+library(scater)
+library(scales)
+library(forcats)
+library(data.table)
+library(stringr)
+library(dplyr)
+
+#================================================================================
+
+#                     只有两组（例如normal组和疾病组）
+
+#================================================================================
+
+#加载单细胞数据
+load("D:/KS项目/公众号文章/miloR单细胞差异丰度/PMN_sce.RData")
+DimPlot(PMN_sce,label = T)
+
+PMN_sce<- scedata
+unique(PMN_sce$group3)
+PMN_sce$group1 <- PMN_sce$group3 %>% str_replace_all("HC","aBD")
+PMN_sce$group2 <- PMN_sce$group3 %>% str_replace_all("aBD","postBD")
+Idents(PMN_sce) <- PMN_sce$group1
+PMN_sce1 <- SplitObject(PMN_sce,split.by = "group1")
+Idents(PMN_sce) <- PMN_sce$group2
+PMN_sce2 <- SplitObject(PMN_sce,split.by = "group2")
+
+PMN_sce1$BD
+PMN_sce <- PMN_sce2$postBD
+# [1] "disease" "healthy"
+table(PMN_sce$group3 )
+PMN_sce$group3 <- factor(PMN_sce$group3, levels=c("aBD","postBD"))#样本分组
+
+#miloR输入对象是SingleCellExperiment，所以我们是常用的seurat对象的话，转化一下
+PMN_sce <- as.SingleCellExperiment(PMN_sce)
+PMN_sce_milo <- miloR::Milo(PMN_sce)#milo object构建
+PMN_sce_milo <- miloR::buildGraph(PMN_sce_milo, k = 30, d = 50)#构建k-nearest neighbour graph
+#k是构建graph是需要考虑的邻近的数量，这个参数可自行调整
+#定义具有代表性的邻域
+PMN_sce_milo <- makeNhoods(PMN_sce_milo, 
+                           prop = 0.2, #随机抽取洗吧比例，一般情况0.1-0.2足够
+                           k = 30, #建议使用与buildGraph一样的k值
+                           d=50, #KNN降维数，建议使用与buildGraph一样的d值
+                           refined = TRUE)
+
+
+PMN_sce_milo <- countCells(PMN_sce_milo, meta.data = data.frame(colData(PMN_sce_milo)), 
+                        sample="orig.ident")#sample是样本重复
+#分组，类似于做差异分析的时候构建的design
+traj_design <- data.frame(colData(PMN_sce_milo))[,c("orig.ident", "group3")]#分别是重复样本ID和分组
+traj_design$orig.ident <- as.factor(traj_design$orig.ident)
+traj_design <- distinct(traj_design)
+rownames(traj_design) <- traj_design$orig.ident
+#计算cell距离
+PMN_sce_milo <- calcNhoodDistance(PMN_sce_milo, d=50)
+#差异分析结果、实验分组两者之前差异
+da_results <- testNhoods(PMN_sce_milo, 
+                         design = ~ group3, 
+                         design.df = traj_design)#分组
+PMN_sce_milo <- buildNhoodGraph(PMN_sce_milo)#构建graph for 可视化
+
+
+
+#可视化，这些可视化函数都可以与ggplot2互通，所以图片修饰上可以按照ggplot2的方式
+
+#可视化1----------------------------------------------------------------------------
+#UMAP图
+plotUMAP(PMN_sce_milo, colour_by = "celltype")
+#UMAP图展示neighborhoods
+pdf('milo_PMN11eda1.pdf', width=8, height=8)
+plotNhoodGraphDA(PMN_sce_milo, da_results, alpha=0.2) +
+  scale_fill_gradient2(low="#070091",#修改颜色
+                       mid="lightgrey",
+                       high="#910000", 
+                       name="log2FC",
+                       limits=c(-5,5),
+                       oob=squish) 
+
+dev.off()
+
+
+#可视化2----------------------------------------------------------------------------
+#蜂群图展示celltype logFC变化
+da_results <- annotateNhoods(PMN_sce_milo, da_results, coldata_col = "celltype")
+
+
+pdf('milo_PMN111ee22.pdf', width=4, height=4)
+plotDAbeeswarm(da_results, group.by = "celltype",alpha = 0.2) +
+  scale_color_gradient2(low="#070091",
+                        mid="lightgrey",
+                        high="#910000",
+                        limits=c(-5,5),
+                        oob=squish) +
+  labs(x="", y="Log2 Fold Change") +
+  theme_bw(base_size=10)+
+  theme(axis.text = element_text(colour = 'black'))
+dev.off()
+
+#Figure 3e
+
+table(scedata@meta.data$labels)
+cells_sub <- subset(scedata@meta.data, 
+                    labels %in% c("T_cells"))
+scRNA_sub <- subset(scedata, 
+                    cells=row.names(cells_sub))
+#组间对比计算各基因logFC
+sub.markers <- FindMarkers(scRNA_sub,group.by = 'Tissue',
+                           ident.1 = 'T',ident.2 = 'N',logfc.threshold = 0.01)
+sub.markers.sig <- subset(sub.markers, p_val_adj<0.05 & avg_log2FC >0.5)
+mydata <- data.frame(Gene=rownames(sub.markers),logFC=sub.markers$avg_log2FC)%>%
+  arrange(desc(logFC))
+genelist <- bitr(mydata$Gene,fromType = "SYMBOL", toType = "ENTREZID", OrgDb = "org.Hs.eg.db")%>%
+  inner_join(mydata,by= c('SYMBOL'='Gene'))%>%
+  arrange(desc(logFC))
+
+gsea_input <- genelist$logFC
+names(gsea_input) <- genelist$ENTREZID
+# gene sets input
+geneset <- read.gmt("c5.go.bp.v7.4.entrez.gmt")  
+# Run GSEA
+gg <- GSEA(gsea_input, TERM2GENE=geneset,verbose=F,
+           pvalueCutoff=0.1, pAdjustMethod = "BH")
+sortgg<- gg[order(gg$NES, decreasing = T),]
+sortgg<- sortgg[sortgg$p.adjust <0.05,]
+# view(sortgg)
+
+Heatmap(plotdata,##对基因表达量进行限定,也可以进行转置t后scale进行过滤
+        name='Score',#热图值图例名
+        top_annotation = Top,#顶部注释  
+        cluster_rows = FALSE,#不对行进行聚类
+        col=colorRamp2(c(-1,0,1),c('#008B8B','#F5F5F5','#DC143C')),#颜色'steelblue','white','firebrick3'蓝白红
+        color_space = "RGB",
+        cluster_columns = FALSE,border = T,
+        row_order=NULL,
+        row_names_side = 'left',
+        column_order=NULL,
+        show_column_names = FALSE,
+        #show_row_names = FALSE,  
+        row_names_gp = gpar(fontsize = 8),
+        column_split = c(rep(1,table(mydata$Tissue)[1]),rep(2,table(mydata$Tissue)[2])),
+        gap = unit(4, "mm"),
+        column_title = NULL,
+        column_title_gp = gpar(fontsize = 10),
+        row_title_gp = gpar(fontsize=10),
+        show_heatmap_legend = TRUE,
+        heatmap_legend_param=list(labels_gp = gpar(fontsize = 10), 
+                                  title_gp = gpar(fontsize = 10, fontface = "bold")))
+
+#Figure 3e 3f
 

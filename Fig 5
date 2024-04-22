@@ -1,3 +1,90 @@
+#Figure 5A 5B 5C 5D
+##    2.1 运行AddModuleScore------------------------------------#######
+scRNA_Ams = pbmc3k.final
+genes_Ams = genes
+
+# 提取scRNA_Ams包含的基因
+genes_Ams = genes_Ams[genes_Ams%in%rownames(scRNA_Ams)]
+
+# AddModuleScore使用的基因集对象需要提前转变为列表
+genes_Ams = list(genes_Ams)
+
+# 一句代码运行
+scRNA_Ams <- AddModuleScore(scRNA_Ams,
+                            features = genes_Ams,#转换成列表的基因集
+                            name = 'Inflammation_score')
+colnames(scRNA_Ams@meta.data)
+
+colnames(scRNA_Ams@meta.data)[8] = "Inflammation_score"
+Data = data.frame('cell_type'=scRNA_Ams$seurat_annotations,
+                  'Score'=scRNA_Ams$Inflammation_score)
+
+Data_summary = Data %>% 
+  group_by(cell_type) %>% 
+  summarise(across(.cols = Score,.fns = list(
+  'mean' = mean, 'sd' =sd
+))) %>% 
+  dplyr::rename('mean' = Score_mean,
+                'sd' = Score_sd)
+Data = left_join(Data,Data_summary,by="cell_type")
+
+
+ggplot(Data, aes(x=cell_type, y=Score,fill=cell_type)) + 
+  geom_violin(trim=FALSE,color="white") + #绘制小提琴图
+  geom_boxplot(width=0.2,position=position_dodge(0.9))+
+  geom_point(aes(x=cell_type, y=mean),pch=19,position=position_dodge(0.9),size=1.5)+#绘制均值为点图
+geom_errorbar(aes(ymin = mean-sd, ymax=mean+sd), #误差条表示95%的置信区间
+                width=0.1, #误差条末端短横线的宽度
+                position=position_dodge(0.9), 
+                color="black",
+                alpha = 0.7,
+                size=0.5) +
+  scale_fill_manual(values = ggsci::pal_aaas()(9))+ #设置填充的颜色
+  theme_bw()+ #背景变为白色
+  theme(axis.text.x=element_text(angle=45,hjust = 1,colour="black",family="Times",size=20), #设置x轴刻度标签的字体显示倾斜角度为15度，并向下调整1(hjust = 1)，字体簇为Times大小为20
+        axis.text.y=element_text(family="Times",size=16,face="plain"), #设置y轴刻度标签的字体簇，字体大小，字体样式为plain
+        axis.title.y=element_text(family="Times",size = 20,face="plain"), #设置y轴标题的字体属性
+        panel.border = element_blank(),axis.line = element_line(colour = "black",size=1), #去除默认填充的灰色，并将x=0轴和y=0轴加粗显示(size=1)
+        legend.text=element_text(face="italic", family="Times", colour="black",  #设置图例的子标题的字体属性
+                                 size=8),
+        legend.title=element_text(face="italic", family="Times", colour="black", #设置图例的总标题的字体属性
+                                  size=18),
+        panel.grid.major = element_blank(),   #不显示网格线
+        panel.grid.minor = element_blank())+  #不显示网格线
+  ylab("")+xlab("") #设置x轴和y轴的标题
+
+scRNA_Aucell = pbmc3k.final
+genes_Aucell = genes
+
+# 提取genes_Aucell包含的基因
+genes_Aucell = genes_Aucell[genes_Aucell%in%rownames(scRNA_Aucell)]
+
+
+library(AUCell)
+cells_rankings <- AUCell_buildRankings(scRNA_Aucell@assays$RNA@counts,nCores=1, plotStats=TRUE,splitByBlocks=TRUE)##基因排序
+cells_AUC <- AUCell_calcAUC(genes_Aucell, cells_rankings, aucMaxRank=nrow(cells_rankings)*0.05) ##计算AUC值。
+cells_assignment <- AUCell_exploreThresholds(cells_AUC, plotHist=TRUE, nCores=1,assign=TRUE)##挑选阈值
+aucs <- getAUC(cells_AUC)
+scRNA_Aucell$AUC <- aucs[1,]
+df<- data.frame(scRNA_Aucell@meta.data, scRNA_Aucell@reductions[["umap"]]@cell.embeddings)
+
+# UMAP
+class_avg <- df %>%
+  dplyr::group_by(seurat_annotations) %>%
+  dplyr::summarise(
+    UMAP_1 = median(UMAP_1),
+    UMAP_2 = median(UMAP_2)
+  )
+ggplot(df, aes(UMAP_1, UMAP_2))  +
+  geom_point(aes(colour  = AUC)) + viridis::scale_color_viridis(option="H") +
+  ggrepel::geom_text_repel(aes(label = seurat_annotations),
+                           data = class_avg,
+                           size = 6,
+                           segment.color = NA) +   
+  theme(legend.position = "none") + theme_classic()
+
+
+#Figure E-G
 library(monocle3)
 Idents(scedata$)
 
@@ -329,3 +416,129 @@ table(-str_detect(seu_obj$TcelltypeC,"NACD4.T"))
 seu_obji <- seu_obj[,!str_detect(seu_obj$TcelltypeC,"^NA$")]
 table(seu_obji$TcelltypeC)
 seu_obji$TcelltypeC <- seu_obji$TcelltypeC %>% str_replace_all(.,"^NA","")
+#Figure 5H
+#!/usr/bin/env Rscript
+setwd('~/lesson_3-4/Scripts')
+options(warn = -1) # hidden warning
+
+suppressPackageStartupMessages({
+  library(SingleCellExperiment)
+  library(AUCell)
+  library(Seurat)
+  library(SCopeLoomR)
+  library(SCENIC)
+  library(GENIE3)
+  library(RcisTarget)
+  library(foreach)
+  library(ComplexHeatmap)
+  library(ggplot2)
+  library(ggrepel)
+  }
+)
+print(Sys.time())
+
+################################################
+#########     ways to import data      #########
+################################################
+
+## from '.loom' file
+#library(SCopeLoomR)
+#loomPath <- "path/to/your/loomfile"
+#loom <- open_loom(loomPath, mode="r+")
+#exprMat <- get_dgem(loom)
+#cellInfo <- get_cell_annotation(loom)
+#close_loom(loom)
+
+## from SeuratObject
+#exprMat <- counts(sce)
+#cellInfo <- seurat.obj@meta.data
+
+## from SingleCellExperiment
+#exprMat <- GetAssayData(seurat.obj, slot='counts')
+#cellInfo <- colData(sce)
+
+
+
+
+
+##自己数据
+## from SeuratObject
+#exprMat <- counts(sce)
+#cellInfo <- seurat.obj@meta.data
+load('../../ept_data_for_inferCNV.Rdata')
+sce<-epi_data_harmony[,epi_data_harmony@meta.data$celltype%in%c('AT2')]
+cellInfo<-sce@meta.data[,colnames(sce@meta.data) %in% c('orig.ident','nCount_RNA','nFeature_RNA','celltype')]
+################################################
+#########   Standard SCNEIC WORKFLOW   #########
+################################################
+
+##########################
+# SCENIC Initialization
+##########################
+OutDir <- './rSCENIC_res'
+#Prefix <- 'mouseBrain'
+Prefix <- 'human_LUAD'
+Org <- 'hgnc'#人：hgnc 小鼠mgi
+myDatasetTitle <- "Example SCENIC R Workflow" 
+#dbDir <- "/home/data/refdir/lesson_3-4/SCENIC_RESOURCES/mgi_v1"
+dbDir <- "~/cisTarget_databases/cisTarget_databases/cisTarget_databases/"
+
+#dbs <- c('500bp'='mm10__refseq-r80__500bp_up_and_100bp_down_tss.mc9nr.feather',
+#         '10kb'='mm10__refseq-r80__10kb_up_and_down_tss.mc9nr.feather')
+dbs <- c('500bp'='mm10__refseq-r80__500bp_up_and_100bp_down_tss.mc9nr.feather',
+         '10kb'='mm10__refseq-r80__10kb_up_and_down_tss.mc9nr.feather')
+
+
+if(!dir.exists(OutDir)) dir.create(OutDir)
+setwd(OutDir)
+
+###################################################
+# NOTE:
+#   if raise error:
+#       object 'motifAnnotations_mgi' not found
+#   then load motif annotation data from RcisTarget
+#data('motifAnnotations_mgi',  package="RcisTarget")
+data('motifAnnotations_hgnc',  package="RcisTarget")#人类的数据
+motifAnnotations_hgnc <- motifAnnotations
+###################################################
+
+#scenicOptions <- initializeScenic(org=Org, dbDir=dbDir, dbs=dbs, datasetTitle=myDatasetTitle, nCores=1) 
+scenicOptions <- initializeScenic(org=Org, dbDir=dbDir, datasetTitle=myDatasetTitle, nCores=1) 
+
+
+# loading data
+# loomPath <- '/home/data/refdir/lesson_3-4/mouseBrain_toy.loom'
+# loom <- open_loom(loomPath)
+# exprMat <- get_dgem(loom)
+# cellInfo <- as.data.frame(get_cell_annotation(loom))
+# saveRDS(cellInfo, file="int/cellInfo.Rds")
+# close_loom(loom)
+exprMat <- as.matrix(sce@assays$RNA@counts)
+cellInfo <- sce@meta.data
+# GENIE3
+genesKept <- geneFiltering(exprMat, scenicOptions=scenicOptions)
+exprMat_filtered <- exprMat[genesKept, ]
+runCorrelation(exprMat_filtered, scenicOptions)
+exprMat_filtered <- log2(exprMat_filtered+1)
+runGenie3(exprMat_filtered, scenicOptions)#最大限速步骤
+
+# SCENIC steps
+scenicOptions@settings$dbs <- scenicOptions@settings$dbs["10kb"] # just for accelerate,实际跑的时候不需要
+scenicOptions <- runSCENIC_1_coexNetwork2modules(scenicOptions)
+scenicOptions <- runSCENIC_2_createRegulons(scenicOptions, coexMethod=c("top5perTarget"))#实际跑的时候不需要coexMethod这个参数
+scenicOptions <- runSCENIC_3_scoreCells(scenicOptions, log2(exprMat+1))
+scenicOptions <- runSCENIC_4_aucell_binarize(scenicOptions)
+saveRDS(scenicOptions, file="int/scenicOptions.Rds")
+
+######################################
+# Regulators for known cell types or clusters
+######################################
+regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+regulonAUC <- regulonAUC[onlyNonDuplicatedExtended(rownames(regulonAUC)),]
+regulonActivity_byCellType <- sapply(split(rownames(cellInfo), cellInfo$orig.ident),
+                                     function(cells) rowMeans(getAUC(regulonAUC)[,cells]))
+regulonActivity_byCellType_Scaled <- t(scale(t(regulonActivity_byCellType), center = T, scale=T))
+pdf(file.path(res_dir, paste0(Prefix, '_Average_Regulon_Activity_byCelltype.pdf')), width = 8, height = 6)
+ComplexHeatmap::Heatmap(regulonActivity_byCellType_Scaled, name="Regulon activity")
+dev.off()
+
